@@ -52,7 +52,6 @@ export default function DrawDetailsPage() {
         const drawData = await drawsService.getDraw(params.id as string);
         setDraw(drawData);
 
-        // Fetch tickets for this specific draw
         const drawTickets = await ticketsService.getTicketsByDraw(
           params.id as string
         );
@@ -114,7 +113,6 @@ export default function DrawDetailsPage() {
       setSelectedNumbers([]);
       setTickets([...tickets, newTicket]);
 
-      // Refresh draw data to update totals
       const updatedDraw = await drawsService.getDraw(params.id as string);
       setDraw(updatedDraw);
     } catch (error: any) {
@@ -132,12 +130,21 @@ export default function DrawDetailsPage() {
   const renderWinnerSection = (winner: Winner | null, isFirstPlace = false) => {
     if (!winner) return null;
 
+    // Find winner ticket - handle both regular tickets and consolation winner objects
     const winnerTicket = tickets.find(
-      (t) => t.user_id === winner.user_id && t.is_winner
+      (t) =>
+        t.id === winner.ticket_id ||
+        (t.user_id === winner.user_id && t.is_winner)
     );
+
+    // Type guard to check if winnerTicket exists and has selected_numbers
+    const hasSelectedNumbers =
+      winnerTicket?.selected_numbers !== undefined &&
+      winnerTicket.selected_numbers.length > 0;
 
     return (
       <div
+        key={`winner-${winner.user_id || winner.ticket_id}`}
         className={`${
           isFirstPlace
             ? 'bg-yellow-50 border-yellow-200'
@@ -157,19 +164,21 @@ export default function DrawDetailsPage() {
             </p>
             <p className='text-sm text-gray-600'>
               Prize: ₦{winner.prize_amount?.toLocaleString()}
-              {winnerTicket && ` • Matched ${winnerTicket.match_count} numbers`}
+              {winner.match_count && ` • Matched ${winner.match_count} numbers`}
             </p>
 
-            {winnerTicket && (
+            {hasSelectedNumbers && (
               <div className='mt-2'>
                 <p className='text-xs text-gray-500 mb-1'>Selected numbers:</p>
                 <div className='flex flex-wrap gap-2'>
-                  {winnerTicket.selected_numbers.map((num, idx) => (
+                  {winnerTicket!.selected_numbers.map((num, idx) => (
                     <span
-                      key={idx}
+                      key={`winner-num-${
+                        winner.user_id || winner.ticket_id
+                      }-${idx}`}
                       className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                        draw?.winning_numbers.includes(num)
-                          ? 'bg-green-100 text-green-800'
+                        draw?.winning_numbers?.includes(num)
+                          ? 'bg-green-100 text-green-800 border border-green-300'
                           : 'bg-gray-100 text-gray-800'
                       }`}
                     >
@@ -348,7 +357,7 @@ export default function DrawDetailsPage() {
                   <div className='flex flex-wrap gap-4 justify-center mb-8'>
                     {draw.winning_numbers.map((number, index) => (
                       <div
-                        key={index}
+                        key={`winning-number-${index}`}
                         className='w-16 h-16 bg-yellow-500 text-white rounded-full flex items-center justify-center font-bold text-xl shadow-lg animate-scale-in'
                         style={{ animationDelay: `${index * 0.1}s` }}
                       >
@@ -369,8 +378,18 @@ export default function DrawDetailsPage() {
                           )
                         </h4>
                         <div className='space-y-3'>
-                          {draw.consolation_winners.map((winner, index) =>
-                            renderWinnerSection(winner, false)
+                          {draw.consolation_winners.map((winner) =>
+                            renderWinnerSection(
+                              {
+                                ...winner,
+                                user_id: winner.user_id,
+                                name: winner.name,
+                                prize_amount: winner.prize_amount,
+                                match_count: winner.match_count,
+                                ticket_id: winner.ticket_id,
+                              },
+                              false
+                            )
                           )}
                         </div>
                       </div>
@@ -392,10 +411,13 @@ export default function DrawDetailsPage() {
                 <CardContent>
                   <div className='space-y-4'>
                     {tickets.map((ticket) => (
-                      <div key={ticket.id} className='border rounded-lg p-4'>
-                        <div className='flex justify-between items-start'>
+                      <div
+                        key={`ticket-${ticket.id}`}
+                        className='border rounded-lg p-4'
+                      >
+                        <div className='flex justify-between items-start mb-3'>
                           <div>
-                            <p className='font-medium'>
+                            <p className='font-medium text-lg'>
                               {ticket.user_name || 'Anonymous'}
                               {ticket.user_id === user?.id && ' (You)'}
                             </p>
@@ -404,48 +426,92 @@ export default function DrawDetailsPage() {
                               {new Date(ticket.purchase_date).toLocaleString()}
                             </p>
                           </div>
-                          {ticket.is_winner ? (
-                            <Badge variant='outline'>Winner</Badge>
-                          ) : (
-                            <Badge variant='secondary'>
-                              {ticket.status === 'completed'
-                                ? 'Completed'
-                                : 'Active'}
-                            </Badge>
-                          )}
+                          <div className='flex items-center gap-2'>
+                            {ticket.is_winner ? (
+                              <Badge
+                                variant='outline'
+                                className='flex items-center gap-1'
+                              >
+                                <Trophy className='w-3 h-3' />
+                                <span>Winner</span>
+                              </Badge>
+                            ) : (
+                              <Badge
+                                variant={
+                                  ticket.status === 'completed'
+                                    ? 'secondary'
+                                    : 'default'
+                                }
+                              >
+                                {ticket.status === 'completed'
+                                  ? 'Completed'
+                                  : 'Active'}
+                              </Badge>
+                            )}
+                          </div>
                         </div>
 
-                        <div className='mt-3'>
-                          <p className='text-sm text-gray-600 mb-2'>
+                        <div className='mb-3'>
+                          <p className='text-sm font-medium text-gray-600 mb-2'>
                             Selected numbers:
                           </p>
                           <div className='flex flex-wrap gap-2'>
                             {ticket.selected_numbers.map((num, idx) => (
-                              <span
-                                key={idx}
-                                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
+                              <div
+                                key={`num-${ticket.id}-${idx}`}
+                                className={`w-10 h-10 rounded-full flex items-center justify-center font-medium ${
                                   isCompleted &&
                                   draw.winning_numbers.includes(num)
-                                    ? 'bg-green-100 text-green-800'
+                                    ? 'bg-green-100 text-green-800 border border-green-300'
                                     : 'bg-gray-100 text-gray-800'
                                 }`}
                               >
                                 {num}
-                              </span>
+                              </div>
                             ))}
                           </div>
                         </div>
 
                         {isCompleted && (
-                          <div className='mt-3 pt-3 border-t'>
-                            <p className='text-sm text-gray-600'>
-                              Matched {ticket.match_count} number
-                              {ticket.match_count !== 1 ? 's' : ''}
-                            </p>
-                            {ticket.is_winner && ticket.prize_amount && (
-                              <p className='text-sm font-medium text-green-600 mt-1'>
-                                Won ₦{ticket.prize_amount.toLocaleString()}!
+                          <div className='border-t pt-3'>
+                            <div className='flex justify-between items-center'>
+                              <p className='text-sm text-gray-600'>
+                                Matched{' '}
+                                <span className='font-medium'>
+                                  {ticket.match_count}
+                                </span>{' '}
+                                number{ticket.match_count !== 1 ? 's' : ''}
                               </p>
+                              {ticket.is_winner && ticket.prize_amount && (
+                                <div className='flex items-center gap-1'>
+                                  <Trophy className='w-4 h-4 text-yellow-600' />
+                                  <span className='text-sm font-medium text-green-600'>
+                                    Won ₦{ticket.prize_amount.toLocaleString()}!
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+
+                            {ticket.match_count > 0 && (
+                              <div className='mt-2'>
+                                <p className='text-xs text-gray-500 mb-1'>
+                                  Matching numbers:
+                                </p>
+                                <div className='flex flex-wrap gap-2'>
+                                  {ticket.selected_numbers
+                                    .filter((num) =>
+                                      draw.winning_numbers.includes(num)
+                                    )
+                                    .map((num, idx) => (
+                                      <div
+                                        key={`match-${ticket.id}-${idx}`}
+                                        className='w-8 h-8 rounded-full bg-green-100 text-green-800 border border-green-300 flex items-center justify-center text-sm font-medium'
+                                      >
+                                        {num}
+                                      </div>
+                                    ))}
+                                </div>
+                              </div>
                             )}
                           </div>
                         )}
@@ -545,7 +611,10 @@ export default function DrawDetailsPage() {
                     color: 'gray',
                   },
                 ].map((item, index) => (
-                  <div key={index} className='flex items-start space-x-3'>
+                  <div
+                    key={`how-to-win-${index}`}
+                    className='flex items-start space-x-3'
+                  >
                     <div
                       className={`mt-1 w-5 h-5 rounded-full bg-${item.color}-100 flex items-center justify-center`}
                     >
@@ -579,15 +648,30 @@ export default function DrawDetailsPage() {
                 <CardContent>
                   <div className='space-y-3'>
                     {userTickets.map((ticket) => (
-                      <div key={ticket.id} className='border rounded-lg p-3'>
+                      <div
+                        key={`user-ticket-${ticket.id}`}
+                        className='border rounded-lg p-3'
+                      >
                         <div className='flex justify-between items-center mb-2'>
                           <span className='text-sm font-medium'>
                             #{ticket.id.slice(-6)}
                           </span>
                           {ticket.is_winner ? (
-                            <Badge variant='outline'>Winner</Badge>
+                            <Badge
+                              variant='outline'
+                              className='flex items-center gap-1'
+                            >
+                              <Trophy className='w-3 h-3' />
+                              <span>Winner</span>
+                            </Badge>
                           ) : (
-                            <Badge variant='secondary'>
+                            <Badge
+                              variant={
+                                ticket.status === 'completed'
+                                  ? 'secondary'
+                                  : 'default'
+                              }
+                            >
                               {ticket.status === 'completed'
                                 ? 'Completed'
                                 : 'Active'}
@@ -597,11 +681,11 @@ export default function DrawDetailsPage() {
                         <div className='flex flex-wrap gap-1'>
                           {ticket.selected_numbers.map((num, idx) => (
                             <span
-                              key={idx}
+                              key={`user-ticket-num-${ticket.id}-${idx}`}
                               className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${
                                 isCompleted &&
                                 draw.winning_numbers.includes(num)
-                                  ? 'bg-green-100 text-green-800'
+                                  ? 'bg-green-100 text-green-800 border border-green-300'
                                   : 'bg-gray-100 text-gray-800'
                               }`}
                             >
@@ -610,9 +694,27 @@ export default function DrawDetailsPage() {
                           ))}
                         </div>
                         {isCompleted && (
-                          <p className='text-xs text-gray-500 mt-2'>
-                            Matched {ticket.match_count} numbers
-                          </p>
+                          <div className='mt-2'>
+                            <p className='text-xs text-gray-500'>
+                              Matched {ticket.match_count} numbers
+                            </p>
+                            {ticket.match_count > 0 && (
+                              <div className='flex flex-wrap gap-1 mt-1'>
+                                {ticket.selected_numbers
+                                  .filter((num) =>
+                                    draw.winning_numbers.includes(num)
+                                  )
+                                  .map((num, idx) => (
+                                    <span
+                                      key={`user-match-${ticket.id}-${idx}`}
+                                      className='text-xs bg-green-100 text-green-800 px-2 py-1 rounded'
+                                    >
+                                      {num}
+                                    </span>
+                                  ))}
+                              </div>
+                            )}
+                          </div>
                         )}
                       </div>
                     ))}
